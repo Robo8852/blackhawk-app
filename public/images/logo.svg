@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="100%" height="auto" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <style>
+      /* This CSS makes the logo responsive and easy to recolor */
+      .logo-fill { fill: #000000; }
+      .text-main { font-family: 'Arial Black', 'Helvetica Neue', sans-serif; font-weight: 900; font-style: italic; }
+      .text-sub { font-family: 'Arial', 'Helvetica Neue', sans-serif; font-weight: 700; font-style: italic; letter-spacing: 0.5px;}
+    </style>
+  </defs>
+
+  <g transform="translate(20, 10) scale(0.8)">
+     <path class="logo-fill" d="M80,20 C90,10 100,5 110,0 L115,10 C110,20 105,30 100,40 L120,45 L110,55 C125,55 140,65 130,80 C120,95 125,120 125,140 L115,180 L105,170 C105,150 100,120 100,120 L80,130 L60,110 L80,100 C70,100 60,100 50,90 C40,80 40,60 50,50 L20,60 L10,50 L50,40 C60,30 70,25 80,20 Z" />
+     <path class="logo-fill" d="M60,60 L80,60 L80,80 L60,80 Z" transform="translate(10,10)"/>
+  </g>
+
+  <text x="180" y="110" font-size="100" class="logo-fill text-main">BLACKHAWK</text>
+  <text x="185" y="145" font-size="34" class="logo-fill text-sub">TRANSPORT • LOGISTICS</text>
+</svg>
