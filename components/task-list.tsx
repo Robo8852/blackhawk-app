@@ -43,7 +43,7 @@ export function TaskList() {
             </Card>
             <div className="mt-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg">
                 <p className="text-base font-semibold text-yellow-800">
-                    ⚠️ Don't forget to hit the route tabs on Samsara when you arrive and depart a location. ⚠️
+                    ⚠️ Don't forget to hit the route tabs on Blackhawk app when you arrive to a location. ⚠️
                 </p>
             </div>
         </div>

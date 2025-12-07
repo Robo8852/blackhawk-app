@@ -16,7 +16,7 @@ export default function Home() {
         <Header />
         <SearchAdd />
         {activeTab === "inspections" && <TaskList />}
-        {activeTab === "routes" && <Routes />}
+        {activeTab === "delivery" && <Routes />}
         {activeTab === "calendar" && <div className="px-6 py-4 text-center text-gray-500">Calendar coming soon...</div>}
         {activeTab === "settings" && <div className="px-6 py-4 text-center text-gray-500">Settings coming soon...</div>}
         <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />

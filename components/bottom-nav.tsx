@@ -22,13 +22,13 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
                 </button>
 
                 <button
-                    onClick={() => onTabChange("routes")}
+                    onClick={() => onTabChange("delivery")}
                     className="flex flex-col items-center gap-1"
                 >
-                    <div className={`p-2 rounded-lg ${activeTab === "routes" ? "bg-black" : ""}`}>
-                        <CheckSquare className={`h-6 w-6 ${activeTab === "routes" ? "text-white" : "text-gray-600"}`} />
+                    <div className={`p-2 rounded-lg ${activeTab === "delivery" ? "bg-black" : ""}`}>
+                        <CheckSquare className={`h-6 w-6 ${activeTab === "delivery" ? "text-white" : "text-gray-600"}`} />
                     </div>
-                    <span className={`text-xs font-medium ${activeTab === "routes" ? "" : "text-gray-600"}`}>Routes</span>
+                    <span className={`text-xs font-medium ${activeTab === "delivery" ? "" : "text-gray-600"}`}>Delivery</span>
                 </button>
 
                 <button
