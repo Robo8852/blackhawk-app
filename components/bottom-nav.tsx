@@ -38,7 +38,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
                     <div className={`p-2 rounded-lg ${activeTab === "calendar" ? "bg-black" : ""}`}>
                         <Calendar className={`h-6 w-6 ${activeTab === "calendar" ? "text-white" : "text-gray-600"}`} />
                     </div>
-                    <span className={`text-xs font-medium ${activeTab === "calendar" ? "" : "text-gray-600"}`}>Calendar</span>
+                    <span className={`text-xs font-medium ${activeTab === "calendar" ? "" : "text-gray-600"}`}>Trip Planning</span>
                 </button>
 
                 <button
