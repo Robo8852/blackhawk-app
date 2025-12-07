@@ -22,7 +22,7 @@ export function TaskList() {
         <div className="px-6 w-full">
             <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg">
                 <p className="text-base font-semibold text-yellow-800">
-                    ⚠️ Don't forget to hit the route tabs on Blackhawk app when you arrive to a location. ⚠️
+                    ⚠️ Don&apos;t forget to hit the Delivery tab on Blackhawk app when you arrive to a location. ⚠️
                 </p>
             </div>
             <Card className="overflow-hidden border-gray-400 rounded-xl">
