@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { TimePicker } from "@/components/ui/time-picker";
 import { Clock, MapPin, AlertTriangle, CheckCircle } from "lucide-react";
 
 interface TripResult {
@@ -19,15 +20,22 @@ interface TripResult {
 }
 
 export function TripPlanner() {
-    const [origin, setOrigin] = useState("");
-    const [destination, setDestination] = useState("");
     const [distance, setDistance] = useState("");
     const [departureDate, setDepartureDate] = useState("");
     const [departureTime, setDepartureTime] = useState("");
     const [deliveryOpen, setDeliveryOpen] = useState("06:00");
     const [deliveryClose, setDeliveryClose] = useState("15:00");
     const [loadingTime, setLoadingTime] = useState("1");
+    const [originTimezone, setOriginTimezone] = useState("America/New_York");
+    const [destTimezone, setDestTimezone] = useState("America/New_York");
     const [result, setResult] = useState<TripResult | null>(null);
+
+    const timezones = [
+        { value: "America/New_York", label: "Eastern (ET)" },
+        { value: "America/Chicago", label: "Central (CT)" },
+        { value: "America/Denver", label: "Mountain (MT)" },
+        { value: "America/Los_Angeles", label: "Pacific (PT)" },
+    ];
 
     const calculateTrip = () => {
         const missing = [];
@@ -115,19 +123,22 @@ export function TripPlanner() {
         });
     };
 
-    const formatTime = (date: Date) => {
+    const formatTime = (date: Date, tz: string) => {
         return date.toLocaleTimeString("en-US", {
             hour: "numeric",
             minute: "2-digit",
             hour12: true,
+            timeZone: tz,
+            timeZoneName: "short",
         });
     };
 
-    const formatDate = (date: Date) => {
+    const formatDate = (date: Date, tz: string) => {
         return date.toLocaleDateString("en-US", {
             weekday: "short",
             month: "short",
             day: "numeric",
+            timeZone: tz,
         });
     };
 
@@ -137,26 +148,6 @@ export function TripPlanner() {
                 <h2 className="text-xl font-bold mb-4">Trip Planner</h2>
 
                 <div className="space-y-4">
-                    {/* Origin & Destination */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1 block">Origin</label>
-                            <Input
-                                placeholder="Sarasota, FL"
-                                value={origin}
-                                onChange={(e) => setOrigin(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1 block">Destination</label>
-                            <Input
-                                placeholder="Cinnaminson, NJ"
-                                value={destination}
-                                onChange={(e) => setDestination(e.target.value)}
-                            />
-                        </div>
-                    </div>
-
                     {/* Distance */}
                     <div>
                         <label className="text-sm font-medium text-gray-700 mb-1 block">Distance (miles)</label>
@@ -166,6 +157,38 @@ export function TripPlanner() {
                             value={distance}
                             onChange={(e) => setDistance(e.target.value)}
                         />
+                    </div>
+
+                    {/* Origin & Destination Timezones */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1 block">Origin Timezone</label>
+                            <select
+                                value={originTimezone}
+                                onChange={(e) => setOriginTimezone(e.target.value)}
+                                className="w-full h-10 px-3 border border-gray-300 rounded-md text-sm"
+                            >
+                                {timezones.map((tz) => (
+                                    <option key={tz.value} value={tz.value}>
+                                        {tz.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1 block">Destination Timezone</label>
+                            <select
+                                value={destTimezone}
+                                onChange={(e) => setDestTimezone(e.target.value)}
+                                className="w-full h-10 px-3 border border-gray-300 rounded-md text-sm"
+                            >
+                                {timezones.map((tz) => (
+                                    <option key={tz.value} value={tz.value}>
+                                        {tz.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
 
                     {/* Departure Date & Time */}
@@ -179,11 +202,10 @@ export function TripPlanner() {
                             />
                         </div>
                         <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1 block">Departure Time</label>
-                            <Input
-                                type="time"
+                            <TimePicker
+                                label="Departure Time"
                                 value={departureTime}
-                                onChange={(e) => setDepartureTime(e.target.value)}
+                                onChange={setDepartureTime}
                             />
                         </div>
                     </div>
@@ -191,19 +213,17 @@ export function TripPlanner() {
                     {/* Delivery Window */}
                     <div className="grid grid-cols-2 gap-3">
                         <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1 block">Delivery Opens</label>
-                            <Input
-                                type="time"
+                            <TimePicker
+                                label="Delivery Opens"
                                 value={deliveryOpen}
-                                onChange={(e) => setDeliveryOpen(e.target.value)}
+                                onChange={setDeliveryOpen}
                             />
                         </div>
                         <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1 block">Delivery Closes</label>
-                            <Input
-                                type="time"
+                            <TimePicker
+                                label="Delivery Closes"
                                 value={deliveryClose}
-                                onChange={(e) => setDeliveryClose(e.target.value)}
+                                onChange={setDeliveryClose}
                             />
                         </div>
                     </div>
@@ -242,7 +262,7 @@ export function TripPlanner() {
                                     {result.isLate ? "⚠️ LATE ARRIVAL" : "✓ On Time"}
                                 </h3>
                                 <p className={`text-sm ${result.isLate ? "text-red-700" : "text-green-700"}`}>
-                                    Estimated arrival: <strong>{formatDate(result.arrivalTime)} at {formatTime(result.arrivalTime)}</strong>
+                                    Estimated arrival: <strong>{formatDate(result.arrivalTime, destTimezone)} at {formatTime(result.arrivalTime, destTimezone)}</strong>
                                 </p>
                             </div>
                         </div>
@@ -289,7 +309,7 @@ export function TripPlanner() {
                                 To arrive by {deliveryClose}, you must leave no later than:
                             </p>
                             <p className="text-xl font-bold mt-1">
-                                {formatDate(result.latestDeparture)} at {formatTime(result.latestDeparture)}
+                                {formatDate(result.latestDeparture, originTimezone)} at {formatTime(result.latestDeparture, originTimezone)}
                             </p>
                         </Card>
                     )}
@@ -302,7 +322,7 @@ export function TripPlanner() {
                                 {result.breaks.map((brk, idx) => (
                                     <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-0">
                                         <span className="font-medium">{brk.type}</span>
-                                        <span className="text-sm text-gray-600">{formatTime(brk.time)}</span>
+                                        <span className="text-sm text-gray-600">{formatTime(brk.time, destTimezone)}</span>
                                     </div>
                                 ))}
                             </div>
