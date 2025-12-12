@@ -98,6 +98,13 @@ export function TripPlanner() {
         const bufferTime = baseDriveHours * 0.1;
         currentTime = new Date(currentTime.getTime() + bufferTime * 60 * 60 * 1000);
 
+        // If arrival is on Sunday, push to Monday at delivery open time (PODs closed Sundays)
+        if (currentTime.getDay() === 0) {
+            currentTime.setDate(currentTime.getDate() + 1); // Move to Monday
+            const [openHour, openMinute] = deliveryOpen.split(":").map(Number);
+            currentTime.setHours(openHour, openMinute, 0, 0);
+        }
+
         // Check if arrival is after delivery close time
         const deliveryCloseDateTime = new Date(`${departureDate}T${deliveryClose}`);
         // If arrival is next day or later, adjust delivery close time
