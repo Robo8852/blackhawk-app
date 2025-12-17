@@ -160,27 +160,27 @@ export function TimePicker({ value, onChange, label }: TimePickerProps) {
                                 {/* Hand */}
                                 {!selectingMinutes ? (
                                     <div
-                                        className="absolute top-1/2 left-1/2 origin-bottom w-0.5 bg-[#4a5568] z-5"
+                                        className="absolute left-1/2 w-0.5 bg-[#4a5568]"
                                         style={{
-                                            height: "70px",
-                                            transform: `translateX(-50%) rotate(${(hours.indexOf(selectedHour) * 30) - 180}deg)`,
-                                            transformOrigin: "bottom center",
+                                            height: "85px",
                                             bottom: "50%",
+                                            transform: `translateX(-50%) rotate(${hours.indexOf(selectedHour) * 30}deg)`,
+                                            transformOrigin: "bottom center",
                                         }}
                                     >
-                                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-8 bg-[#4a5568] rounded-full"></div>
+                                        <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-8 h-8 bg-[#4a5568] rounded-full"></div>
                                     </div>
                                 ) : (
                                     <div
-                                        className="absolute top-1/2 left-1/2 origin-bottom w-0.5 bg-[#4a5568] z-5"
+                                        className="absolute left-1/2 w-0.5 bg-[#4a5568]"
                                         style={{
-                                            height: "70px",
-                                            transform: `translateX(-50%) rotate(${(selectedMinute / 5 * 30) - 180}deg)`,
-                                            transformOrigin: "bottom center",
+                                            height: "85px",
                                             bottom: "50%",
+                                            transform: `translateX(-50%) rotate(${selectedMinute / 5 * 30}deg)`,
+                                            transformOrigin: "bottom center",
                                         }}
                                     >
-                                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-8 bg-[#4a5568] rounded-full"></div>
+                                        <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-8 h-8 bg-[#4a5568] rounded-full"></div>
                                     </div>
                                 )}
 
