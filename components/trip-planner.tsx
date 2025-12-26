@@ -319,8 +319,8 @@ export function TripPlanner() {
                     </div>
 
                     {/* Origin & Destination Timezones */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="flex-1">
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Origin Timezone</label>
                             <select
                                 value={originTimezone}
@@ -334,7 +334,7 @@ export function TripPlanner() {
                                 ))}
                             </select>
                         </div>
-                        <div>
+                        <div className="flex-1">
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Destination Timezone</label>
                             <select
                                 value={destTimezone}
@@ -351,8 +351,8 @@ export function TripPlanner() {
                     </div>
 
                     {/* Departure Date & Time */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="flex-1">
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Departure Date</label>
                             <Input
                                 type="date"
@@ -360,7 +360,7 @@ export function TripPlanner() {
                                 onChange={(e) => setDepartureDate(e.target.value)}
                             />
                         </div>
-                        <div>
+                        <div className="flex-1">
                             <TimePicker
                                 label="Departure Time"
                                 value={departureTime}
@@ -370,15 +370,15 @@ export function TripPlanner() {
                     </div>
 
                     {/* Delivery Window */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="flex-1">
                             <TimePicker
                                 label="Delivery Opens"
                                 value={deliveryOpen}
                                 onChange={setDeliveryOpen}
                             />
                         </div>
-                        <div>
+                        <div className="flex-1">
                             <TimePicker
                                 label="Delivery Closes"
                                 value={deliveryClose}
