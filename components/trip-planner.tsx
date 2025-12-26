@@ -5,38 +5,57 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { TimePicker } from "@/components/ui/time-picker";
-import { Clock, MapPin, AlertTriangle, CheckCircle, Timer, Coffee, BedDouble, Truck, PackageCheck, Calendar } from "lucide-react";
+import { Clock, MapPin, AlertTriangle, CheckCircle, Timer, Coffee, BedDouble, Truck, PackageCheck, Calendar, Sparkles } from "lucide-react";
+import { DateTime } from "luxon";
+import { generateTripSchedule } from "@/actions/generate-trip-schedule";
 
 interface TripResult {
-    arrivalTime: Date;
+    arrivalTime: DateTime;
     totalHours: number;
     driveHours: number;
     breakMinutes: number;
     restHours: number;
     bufferHours: number;
-    breaks: { time: Date; type: string; duration: number }[];
+    breaks: { time: DateTime; type: string; duration: number }[];
     isLate: boolean;
-    latestDeparture?: Date;
+    latestDeparture?: DateTime;
     // Time Activity Projections
-    departureDateTime: Date;
-    driveLimit: Date;       // departure + 11 hours
-    breakDue: Date;         // departure + 8 hours
-    canDriveAgain: Date;    // drive limit + 10 hours
-    securementChecks: Date[];
+    departureDateTime: DateTime;
+    driveLimit: DateTime;       // departure + 11 hours
+    breakDue: DateTime;         // departure + 8 hours
+    canDriveAgain: DateTime;    // drive limit + 10 hours
+    securementChecks: DateTime[];
     // Multi-Day Schedule
-    daySchedule: { day: number; driveStart: Date; driveEnd: Date; restEnd: Date; isArrivalDay: boolean }[];
+    daySchedule: { day: number; driveStart: DateTime; driveEnd: DateTime; restEnd: DateTime; isArrivalDay: boolean }[];
+}
+
+interface AISchedule {
+    summary: {
+        totalDurationHours: number;
+        estimatedArrival: string;
+    };
+    schedule: {
+        day: number;
+        date: string;
+        activity: string;
+        start: string;
+        end: string;
+        notes: string;
+    }[];
 }
 
 export function TripPlanner() {
-    const [distance, setDistance] = useState("");
-    const [departureDate, setDepartureDate] = useState("");
-    const [departureTime, setDepartureTime] = useState("");
+    const [distance, setDistance] = useState("3300");
+    const [departureDate, setDepartureDate] = useState("2025-12-26");
+    const [departureTime, setDepartureTime] = useState("09:00");
     const [deliveryOpen, setDeliveryOpen] = useState("06:00");
     const [deliveryClose, setDeliveryClose] = useState("15:00");
     const [loadingTime, setLoadingTime] = useState("1");
     const [originTimezone, setOriginTimezone] = useState("America/New_York");
     const [destTimezone, setDestTimezone] = useState("America/New_York");
     const [result, setResult] = useState<TripResult | null>(null);
+    const [aiResult, setAiResult] = useState<AISchedule | null>(null);
+    const [isLoadingAI, setIsLoadingAI] = useState(false);
 
     const timezones = [
         { value: "America/New_York", label: "Eastern (ET)" },
@@ -44,6 +63,212 @@ export function TripPlanner() {
         { value: "America/Denver", label: "Mountain (MT)" },
         { value: "America/Los_Angeles", label: "Pacific (PT)" },
     ];
+
+    const safeParseFloat = (val: string) => {
+        const parsed = parseFloat(val);
+        return isNaN(parsed) ? 0 : parsed;
+    };
+
+
+
+    const getTripCalculation = (): TripResult | null => {
+        const miles = safeParseFloat(distance);
+        const avgSpeed = 52.5; // mph
+        const totalDriveHoursRequired = miles / avgSpeed;
+
+        if (miles <= 0) return null;
+
+        // Parse Departure Time in Origin Timezone
+        let currentTime = DateTime.fromISO(`${departureDate}T${departureTime}`, { zone: originTimezone });
+        const initialDeparture = currentTime;
+
+        if (!currentTime.isValid) return null;
+
+        // Initialize Counters
+        let remainingDriveHours = totalDriveHoursRequired;
+        let totalDriveTimeAccumulated = 0;
+        let totalRestTimeAccumulated = 0;
+        let totalBreakTimeAccumulated = 0;
+        const breaks: { time: DateTime; type: string; duration: number }[] = [];
+
+        // DOT HOS Trackers
+        let driveTimeInShift = 0;
+        let onDutyTimeInShift = 0;
+        let driveTimeSinceBreak = 0;
+
+        // Multi-Day Schedule
+        const daySchedule: { day: number; driveStart: DateTime; driveEnd: DateTime; restEnd: DateTime; isArrivalDay: boolean }[] = [];
+        let dayNum = 1;
+        let shiftStart = currentTime;
+
+        // Simulation Loop
+        while (remainingDriveHours > 0) {
+            const distTo8 = 8 - driveTimeSinceBreak;
+            const distTo11 = 11 - driveTimeInShift;
+            const distTo14 = 14 - onDutyTimeInShift;
+
+            const maxDriveBlock = Math.max(0, Math.min(distTo8, distTo11, distTo14, remainingDriveHours));
+
+            if (maxDriveBlock > 0) {
+                currentTime = currentTime.plus({ hours: maxDriveBlock });
+                remainingDriveHours -= maxDriveBlock;
+                driveTimeInShift += maxDriveBlock;
+                onDutyTimeInShift += maxDriveBlock;
+                driveTimeSinceBreak += maxDriveBlock;
+                totalDriveTimeAccumulated += maxDriveBlock;
+            }
+
+            if (remainingDriveHours <= 0.01) break;
+
+            // 30-min Break Rule
+            if (Math.abs(driveTimeSinceBreak - 8) < 0.01) {
+                const needs10h = (Math.abs(driveTimeInShift - 11) < 0.01) || (Math.abs(onDutyTimeInShift - 14) < 0.01);
+                if (!needs10h) {
+                    currentTime = currentTime.plus({ minutes: 30 });
+                    breaks.push({ time: currentTime, type: "30-min Break", duration: 30 });
+                    totalBreakTimeAccumulated += 30;
+                    driveTimeSinceBreak = 0;
+                    onDutyTimeInShift += 0.5;
+                }
+            }
+
+            // 10-hour Rest Rule
+            if (Math.abs(driveTimeInShift - 11) < 0.01 || Math.abs(onDutyTimeInShift - 14) < 0.01) {
+                const shiftEnd = currentTime;
+
+                // Take 10h rest
+                currentTime = currentTime.plus({ hours: 10 });
+
+                // ---------------------------------------------------------
+                // DRIVER HABIT ENFORCEMENT: 5 AM Start
+                // ---------------------------------------------------------
+                if (currentTime.hour < 5) {
+                    currentTime = currentTime.set({ hour: 5, minute: 0, second: 0, millisecond: 0 });
+                    // Note: This adds implicit rest time, but primarily just aligns the schedule
+                }
+
+                daySchedule.push({
+                    day: dayNum,
+                    driveStart: shiftStart,
+                    driveEnd: shiftEnd,
+                    restEnd: currentTime,
+                    isArrivalDay: false
+                });
+
+                breaks.push({ time: currentTime, type: "10-hour Rest (EndOfShift)", duration: 600 });
+                totalRestTimeAccumulated += 10; // Simplified tracker
+
+                driveTimeInShift = 0;
+                onDutyTimeInShift = 0;
+                driveTimeSinceBreak = 0;
+                shiftStart = currentTime;
+                dayNum++;
+            }
+        }
+
+        // Final Leg
+        daySchedule.push({
+            day: dayNum,
+            driveStart: shiftStart,
+            driveEnd: currentTime,
+            restEnd: currentTime,
+            isArrivalDay: true
+        });
+
+        // Add Loading/Unloading
+        const loadHours = safeParseFloat(loadingTime);
+        const bufferHours = totalDriveHoursRequired * 0.1;
+
+        currentTime = currentTime.plus({ hours: loadHours + bufferHours });
+
+        // Delivery Logic
+        let arrivalInDest = currentTime.setZone(destTimezone);
+        if (arrivalInDest.weekday === 7) {
+            arrivalInDest = arrivalInDest.plus({ days: 1 });
+            const [openH, openM] = deliveryOpen.split(":").map(Number);
+            arrivalInDest = arrivalInDest.set({ hour: openH, minute: openM, second: 0, millisecond: 0 });
+        }
+
+        const [closeH, closeM] = deliveryClose.split(":").map(Number);
+        const deliveryCloseToday = arrivalInDest.set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 });
+
+        let isLate = false;
+        if (arrivalInDest > deliveryCloseToday) isLate = true;
+
+        const totalDurationHours = totalDriveTimeAccumulated + totalRestTimeAccumulated + (totalBreakTimeAccumulated / 60) + loadHours + bufferHours;
+        const latestDeparture = deliveryCloseToday.minus({ hours: totalDurationHours }).setZone(originTimezone);
+
+        const driveLimit = initialDeparture.plus({ hours: 11 });
+        const breakDue = initialDeparture.plus({ hours: 8 });
+        const canDriveAgain = driveLimit.plus({ hours: 10 });
+
+        const checkPoints: DateTime[] = [];
+        let checkTimer = initialDeparture.plus({ minutes: 50 });
+        if (checkTimer < driveLimit) checkPoints.push(checkTimer);
+        let safeLoopGuard = 0;
+        while (checkTimer < driveLimit && safeLoopGuard < 20) {
+            checkTimer = checkTimer.plus({ minutes: 170 });
+            if (checkTimer < driveLimit) checkPoints.push(checkTimer);
+            safeLoopGuard++;
+        }
+
+        return {
+            arrivalTime: arrivalInDest,
+            totalHours: totalDurationHours,
+            driveHours: totalDriveHoursRequired,
+            breakMinutes: totalBreakTimeAccumulated,
+            restHours: totalRestTimeAccumulated,
+            bufferHours: bufferHours + loadHours,
+            breaks,
+            isLate,
+            latestDeparture,
+            departureDateTime: initialDeparture,
+            driveLimit,
+            breakDue,
+            canDriveAgain,
+            securementChecks: checkPoints,
+            daySchedule
+        };
+    };
+
+    const handleSmartSchedule = async () => {
+        const missing = [];
+        if (!distance) missing.push("Distance");
+        if (!departureDate) missing.push("Departure Date");
+        if (!departureTime) missing.push("Departure Time");
+
+        if (missing.length > 0) {
+            alert(`Please fill in: ${missing.join(", ")}`);
+            return;
+        }
+
+        // 1. Run the Math First (Ground Truth)
+        const mathResult = getTripCalculation();
+        if (!mathResult) {
+            alert("Could not calculate trip details for AI.");
+            return;
+        }
+
+        setIsLoadingAI(true);
+        try {
+            // 2. Pass Math to AI
+            const result = await generateTripSchedule({
+                distance: safeParseFloat(distance),
+                departureDate,
+                departureTime,
+                originTimezone,
+                destTimezone,
+                calculatedArrival: formatTime(mathResult.arrivalTime, destTimezone), // "Fri, Jan 3 at 9:00 AM PST"
+                totalDurationHours: mathResult.totalHours
+            });
+            setAiResult(result);
+        } catch (error) {
+            alert("Failed to generate AI schedule. Check console.");
+            console.error(error);
+        } finally {
+            setIsLoadingAI(false);
+        }
+    };
 
     const calculateTrip = () => {
         const missing = [];
@@ -56,161 +281,24 @@ export function TripPlanner() {
             return;
         }
 
-        const miles = parseFloat(distance);
-        const avgSpeed = 50; // mph
-        const baseDriveHours = miles / avgSpeed;
-
-        // Calculate HOS breaks
-        let totalDriveTime = 0;
-        let breakTime = 0;
-        let restTime = 0;
-        const breaks: { time: Date; type: string; duration: number }[] = [];
-
-        let currentTime = new Date(`${departureDate}T${departureTime}`);
-        let remainingDrive = baseDriveHours;
-        let driveSinceBreak = 0;
-        let driveSinceRest = 0;
-
-        while (remainingDrive > 0) {
-            // 30-min break after 8 hours
-            if (driveSinceBreak >= 8) {
-                currentTime = new Date(currentTime.getTime() + 30 * 60 * 1000);
-                breaks.push({ time: new Date(currentTime), type: "30-min Break", duration: 30 });
-                breakTime += 0.5;
-                driveSinceBreak = 0;
-            }
-
-            // 10-hour rest after 11 hours
-            if (driveSinceRest >= 11) {
-                currentTime = new Date(currentTime.getTime() + 10 * 60 * 60 * 1000);
-                breaks.push({ time: new Date(currentTime), type: "10-hour Rest", duration: 600 });
-                restTime += 10;
-                driveSinceRest = 0;
-                driveSinceBreak = 0;
-            }
-
-            // Drive for 1 hour increments
-            const driveChunk = Math.min(1, remainingDrive);
-            currentTime = new Date(currentTime.getTime() + driveChunk * 60 * 60 * 1000);
-            totalDriveTime += driveChunk;
-            driveSinceBreak += driveChunk;
-            driveSinceRest += driveChunk;
-            remainingDrive -= driveChunk;
+        const res = getTripCalculation();
+        if (res) {
+            setResult(res);
         }
-
-        // Add loading/unloading time
-        const loadTime = parseFloat(loadingTime);
-        currentTime = new Date(currentTime.getTime() + loadTime * 60 * 60 * 1000);
-
-        // Add 10% buffer for traffic/weather
-        const bufferTime = baseDriveHours * 0.1;
-        currentTime = new Date(currentTime.getTime() + bufferTime * 60 * 60 * 1000);
-
-        // If arrival is on Sunday, push to Monday at delivery open time (PODs closed Sundays)
-        if (currentTime.getDay() === 0) {
-            currentTime.setDate(currentTime.getDate() + 1); // Move to Monday
-            const [openHour, openMinute] = deliveryOpen.split(":").map(Number);
-            currentTime.setHours(openHour, openMinute, 0, 0);
-        }
-
-        // Check if arrival is after delivery close time
-        const deliveryCloseDateTime = new Date(`${departureDate}T${deliveryClose}`);
-        // If arrival is next day or later, adjust delivery close time
-        if (currentTime.getDate() > deliveryCloseDateTime.getDate()) {
-            deliveryCloseDateTime.setDate(currentTime.getDate());
-        }
-        const isLate = currentTime > deliveryCloseDateTime;
-
-        // Calculate latest departure time (work backwards)
-        const totalTripHours = baseDriveHours + breakTime + restTime + loadTime + bufferTime;
-        const latestDeparture = new Date(deliveryCloseDateTime.getTime() - totalTripHours * 60 * 60 * 1000);
-
-        // Calculate Time Activity Projections
-        const departureDateTime = new Date(`${departureDate}T${departureTime}`);
-        const driveLimit = new Date(departureDateTime.getTime() + 11 * 60 * 60 * 1000);  // +11 hours
-        const breakDue = new Date(departureDateTime.getTime() + 8 * 60 * 60 * 1000);     // +8 hours
-        const canDriveAgain = new Date(driveLimit.getTime() + 10 * 60 * 60 * 1000);      // drive limit + 10 hour rest
-
-        // Calculate securement checks: first at 50min, then every 2h 50m (within 11-hour drive window only)
-        const securementChecks: Date[] = [];
-        const firstCheckInterval = 50 * 60 * 1000; // 50 minutes in ms
-        const subsequentInterval = (2 * 60 + 50) * 60 * 1000; // 2h 50m in ms
-
-        // First check at 50 minutes (only within 11-hour drive limit)
-        let checkTime = new Date(departureDateTime.getTime() + firstCheckInterval);
-        if (checkTime < driveLimit) {
-            securementChecks.push(new Date(checkTime));
-            // Subsequent checks every 2h 50m
-            checkTime = new Date(checkTime.getTime() + subsequentInterval);
-            while (checkTime < driveLimit) {
-                securementChecks.push(new Date(checkTime));
-                checkTime = new Date(checkTime.getTime() + subsequentInterval);
-            }
-        }
-
-        // Calculate Multi-Day Schedule (11h drive, 10h rest cycles until arrival)
-        const daySchedule: { day: number; driveStart: Date; driveEnd: Date; restEnd: Date; isArrivalDay: boolean }[] = [];
-        let dayNum = 1;
-        let dayDriveStart = new Date(departureDateTime);
-
-        while (dayDriveStart < currentTime) {
-            const dayDriveEnd = new Date(dayDriveStart.getTime() + 11 * 60 * 60 * 1000); // +11 hours
-            const dayRestEnd = new Date(dayDriveEnd.getTime() + 10 * 60 * 60 * 1000);    // +10 hours rest
-
-            // Check if arrival happens during this driving window
-            const isArrivalDay = currentTime <= dayDriveEnd;
-
-            daySchedule.push({
-                day: dayNum,
-                driveStart: new Date(dayDriveStart),
-                driveEnd: isArrivalDay ? new Date(currentTime) : new Date(dayDriveEnd),
-                restEnd: new Date(dayRestEnd),
-                isArrivalDay
-            });
-
-            if (isArrivalDay) break;
-
-            // Next day starts after rest
-            dayDriveStart = new Date(dayRestEnd);
-            dayNum++;
-        }
-
-        setResult({
-            arrivalTime: currentTime,
-            totalHours: totalTripHours,
-            driveHours: baseDriveHours,
-            breakMinutes: breakTime * 60,
-            restHours: restTime,
-            bufferHours: bufferTime + loadTime,
-            breaks,
-            isLate,
-            latestDeparture,
-            departureDateTime,
-            driveLimit,
-            breakDue,
-            canDriveAgain,
-            securementChecks,
-            daySchedule,
-        });
     };
 
-    const formatTime = (date: Date, tz: string) => {
-        return date.toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: true,
-            timeZone: tz,
-            timeZoneName: "short",
-        });
+    const formatTime = (dt: DateTime, tz?: string) => {
+        // Luxon objects already handle timezone if setZone is used.
+        // If tz is passed, we might want to re-zone for display?
+        // In the state, we store DateTimes with their specific zones.
+        // The render calls pass 'destTimezone' or 'originTimezone' strings.
+        // If the DateTime is already in that zone, .toFormat is fine.
+        // If not, we setZone.
+        return dt.setZone(tz || dt.zoneName || undefined).toFormat("h:mm a ZZZZ");
     };
 
-    const formatDate = (date: Date, tz: string) => {
-        return date.toLocaleDateString("en-US", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-            timeZone: tz,
-        });
+    const formatDate = (dt: DateTime, tz?: string) => {
+        return dt.setZone(tz || dt.zoneName || undefined).toFormat("ccc, MMM d");
     };
 
     return (
@@ -311,163 +399,108 @@ export function TripPlanner() {
                         />
                     </div>
 
-                    <Button onClick={calculateTrip} className="w-full bg-black hover:bg-gray-800 text-white">
-                        Calculate Trip
-                    </Button>
+                    <div className="flex gap-4">
+                        <Button onClick={calculateTrip} variant="outline" className="flex-1">
+                            Calculators Only
+                        </Button>
+                        <Button
+                            onClick={handleSmartSchedule}
+                            disabled={isLoadingAI}
+                            className="flex-1 bg-black hover:bg-gray-800 text-white flex items-center justify-center gap-2"
+                        >
+                            {isLoadingAI ? (
+                                <span>Thinking...</span>
+                            ) : (
+                                <>
+                                    <Sparkles className="h-4 w-4" />
+                                    Smart Schedule (AI)
+                                </>
+                            )}
+                        </Button>
+                    </div>
                 </div>
             </Card>
 
             {/* Results */}
-            {result && (
+            {(result || aiResult) && (
                 <div className="space-y-4">
                     {/* Arrival Status */}
-                    <Card className={`p-6 border-2 ${result.isLate ? "border-red-500 bg-red-50" : "border-green-500 bg-green-50"}`}>
-                        <div className="flex items-center gap-3">
-                            {result.isLate ? (
-                                <AlertTriangle className="h-8 w-8 text-red-600" />
-                            ) : (
-                                <CheckCircle className="h-8 w-8 text-green-600" />
-                            )}
-                            <div>
-                                <h3 className={`text-lg font-bold ${result.isLate ? "text-red-800" : "text-green-800"}`}>
-                                    {result.isLate ? "⚠️ LATE ARRIVAL" : "✓ On Time"}
-                                </h3>
-                                <p className={`text-sm ${result.isLate ? "text-red-700" : "text-green-700"}`}>
-                                    Estimated arrival: <strong>{formatDate(result.arrivalTime, destTimezone)} at {formatTime(result.arrivalTime, destTimezone)}</strong>
-                                </p>
-                            </div>
-                        </div>
-                    </Card>
-
-                    {/* Trip Summary */}
-                    <Card className="p-6 border-gray-400">
-                        <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
-                            <Clock className="h-5 w-5" />
-                            Trip Summary
-                        </h3>
-                        <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Total Trip Time:</span>
-                                <span className="font-semibold">{result.totalHours.toFixed(1)} hours</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Driving Time:</span>
-                                <span className="font-semibold">{result.driveHours.toFixed(1)} hours</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Break Time:</span>
-                                <span className="font-semibold">{result.breakMinutes} minutes</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Rest Time:</span>
-                                <span className="font-semibold">{result.restHours} hours</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Loading + Buffer:</span>
-                                <span className="font-semibold">{result.bufferHours.toFixed(1)} hours</span>
-                            </div>
-                        </div>
-                    </Card>
-
-                    {/* Time Activity Projections */}
-                    <Card className="p-6 bg-purple-50 border-purple-300">
-                        <h3 className="text-lg font-bold mb-3 flex items-center gap-2 text-purple-800">
-                            <Timer className="h-5 w-5" />
-                            Time Activity
-                        </h3>
-                        <div className="space-y-4">
-                            {/* From Departure */}
-                            <div className="space-y-2">
-                                <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">From Your Departure</p>
-                                <div className="flex items-center justify-between py-2 border-b border-purple-200">
-                                    <div className="flex items-center gap-2">
-                                        <Coffee className="h-4 w-4 text-orange-500" />
-                                        <span className="text-sm text-gray-700">30-min Break Due</span>
-                                    </div>
-                                    <span className="font-semibold text-orange-600">
-                                        {formatDate(result.breakDue, originTimezone)} {formatTime(result.breakDue, originTimezone)}
-                                    </span>
-                                </div>
-                                <div className="flex items-center justify-between py-2 border-b border-purple-200">
-                                    <div className="flex items-center gap-2">
-                                        <Truck className="h-4 w-4 text-red-500" />
-                                        <span className="text-sm text-gray-700">11-Hour Drive Limit</span>
-                                    </div>
-                                    <span className="font-semibold text-red-600">
-                                        {formatDate(result.driveLimit, originTimezone)} {formatTime(result.driveLimit, originTimezone)}
-                                    </span>
+                    {result && (
+                        <Card className={`p-6 border-2 ${result.isLate ? "border-red-500 bg-red-50" : "border-green-500 bg-green-50"}`}>
+                            <div className="flex items-center gap-3">
+                                {result.isLate ? (
+                                    <AlertTriangle className="h-8 w-8 text-red-600" />
+                                ) : (
+                                    <CheckCircle className="h-8 w-8 text-green-600" />
+                                )}
+                                <div>
+                                    <h3 className={`text-lg font-bold ${result.isLate ? "text-red-800" : "text-green-800"}`}>
+                                        {result.isLate ? "⚠️ LATE ARRIVAL" : "✓ On Time"}
+                                    </h3>
+                                    <p className={`text-sm ${result.isLate ? "text-red-700" : "text-green-700"}`}>
+                                        Estimated arrival: <strong>{formatDate(result.arrivalTime)} at {formatTime(result.arrivalTime)}</strong>
+                                    </p>
                                 </div>
                             </div>
+                        </Card>
+                    )}
 
-                            {/* Securement Checks */}
-                            {result.securementChecks.length > 0 && (
-                                <div className="space-y-2">
-                                    <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">Securement Checks (50min, then 2h 50m)</p>
-                                    {result.securementChecks.map((checkTime, idx) => (
-                                        <div key={idx} className="flex items-center justify-between py-2 border-b border-purple-200 last:border-0">
-                                            <div className="flex items-center gap-2">
-                                                <PackageCheck className="h-4 w-4 text-blue-500" />
-                                                <span className="text-sm text-gray-700">Check #{idx + 1}</span>
-                                            </div>
-                                            <span className="font-semibold text-blue-600">
-                                                {formatTime(checkTime, originTimezone)}
+                    {/* AI Schedule Result */}
+                    {aiResult && (
+                        <Card className="p-6 bg-indigo-50 border-indigo-300">
+                            <h3 className="text-lg font-bold mb-3 flex items-center gap-2 text-indigo-800">
+                                <Sparkles className="h-5 w-5" />
+                                AI Trip Schedule
+                            </h3>
+                            <div className="mb-4 p-3 bg-white rounded-lg border border-indigo-100">
+                                <p className="text-sm text-gray-600">Total Duration: <strong>{aiResult.summary.totalDurationHours} hours</strong></p>
+                                <p className="text-sm text-gray-600">Estimated Arrival: <strong>{aiResult.summary.estimatedArrival}</strong></p>
+                            </div>
+                            <div className="space-y-3">
+                                {Object.entries(
+                                    aiResult.schedule.reduce((acc, item) => {
+                                        // Group by Day number
+                                        const key = item.day;
+                                        if (!acc[key]) acc[key] = [];
+                                        acc[key].push(item);
+                                        return acc;
+                                    }, {} as Record<number, typeof aiResult.schedule>)
+                                ).map(([dayNum, events]) => (
+                                    <div key={dayNum} className="bg-white rounded-lg border border-indigo-100 shadow-sm overflow-hidden">
+                                        {/* Day Header */}
+                                        <div className="bg-indigo-50 px-4 py-2 border-b border-indigo-100 flex justify-between items-center">
+                                            <span className="font-bold text-indigo-900">
+                                                Day {dayNum} <span className="text-indigo-400 mx-1">|</span> {events[0].date}
+                                            </span>
+                                            <span className="text-xs text-indigo-600 font-medium">
+                                                {events.length} Events
                                             </span>
                                         </div>
-                                    ))}
-                                </div>
-                            )}
 
-                            {/* From Arrival */}
-                            <div className="space-y-2">
-                                <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">After Your Arrival</p>
-                                <div className="flex items-center justify-between py-2">
-                                    <div className="flex items-center gap-2">
-                                        <BedDouble className="h-4 w-4 text-green-500" />
-                                        <span className="text-sm text-gray-700">Can Drive Again</span>
-                                    </div>
-                                    <span className="font-semibold text-green-600">
-                                        {formatDate(result.canDriveAgain, destTimezone)} {formatTime(result.canDriveAgain, destTimezone)}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </Card>
-
-                    {/* Multi-Day Trip Schedule */}
-                    {result.daySchedule.length > 0 && (
-                        <Card className="p-6 bg-amber-50 border-amber-300">
-                            <h3 className="text-lg font-bold mb-3 flex items-center gap-2 text-amber-800">
-                                <Calendar className="h-5 w-5" />
-                                Trip Schedule
-                            </h3>
-                            <div className="space-y-3">
-                                {result.daySchedule.map((day) => (
-                                    <div key={day.day} className={`p-3 rounded-lg ${day.isArrivalDay ? 'bg-green-100 border border-green-300' : 'bg-white border border-amber-200'}`}>
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="font-bold text-amber-800">{formatDate(day.driveStart, originTimezone)}</span>
-                                            {day.isArrivalDay && (
-                                                <span className="text-xs bg-green-500 text-white px-2 py-1 rounded-full">Arrival</span>
-                                            )}
-                                        </div>
-                                        <div className="space-y-1 text-sm">
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-600 flex items-center gap-1">
-                                                    <Truck className="h-3 w-3" /> Drive
-                                                </span>
-                                                <span className="font-medium">
-                                                    {formatTime(day.driveStart, originTimezone)} - {formatTime(day.driveEnd, originTimezone)}
-                                                </span>
-                                            </div>
-                                            {!day.isArrivalDay && (
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-600 flex items-center gap-1">
-                                                        <BedDouble className="h-3 w-3" /> Rest Until
-                                                    </span>
-                                                    <span className="font-medium">
-                                                        {formatDate(day.restEnd, originTimezone)} {formatTime(day.restEnd, originTimezone)}
-                                                    </span>
+                                        {/* Events List */}
+                                        <div className="divide-y divide-gray-50">
+                                            {events.map((event, idx) => (
+                                                <div key={idx} className="p-3 hover:bg-gray-50 transition-colors">
+                                                    <div className="flex justify-between items-start mb-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${event.activity.toLowerCase().includes('drive') ? 'bg-blue-100 text-blue-700' :
+                                                                event.activity.toLowerCase().includes('rest') ? 'bg-purple-100 text-purple-700' :
+                                                                    'bg-gray-100 text-gray-700'
+                                                                }`}>
+                                                                {event.activity}
+                                                            </span>
+                                                        </div>
+                                                        <div className="text-sm font-medium text-gray-900">
+                                                            {event.start} <span className="text-gray-400 mx-1">→</span> {event.end}
+                                                        </div>
+                                                    </div>
+                                                    {event.notes && (
+                                                        <p className="text-xs text-gray-500 mt-1 pl-1 border-l-2 border-indigo-100">
+                                                            {event.notes}
+                                                        </p>
+                                                    )}
                                                 </div>
-                                            )}
+                                            ))}
                                         </div>
                                     </div>
                                 ))}
@@ -475,8 +508,106 @@ export function TripPlanner() {
                         </Card>
                     )}
 
+                    {/* Standard Trip Summary (Calculated) */}
+                    {result && (
+                        <Card className="p-6 border-gray-400">
+                            <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
+                                <Clock className="h-5 w-5" />
+                                Trip Summary (Calculated)
+                            </h3>
+                            <div className="space-y-2 text-sm">
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600">Total Trip Time:</span>
+                                    <span className="font-semibold">{result.totalHours.toFixed(1)} hours</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600">Driving Time:</span>
+                                    <span className="font-semibold">{result.driveHours.toFixed(1)} hours</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600">Break Time:</span>
+                                    <span className="font-semibold">{result.breakMinutes} minutes</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600">Rest Time:</span>
+                                    <span className="font-semibold">{result.restHours} hours</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600">Loading + Buffer:</span>
+                                    <span className="font-semibold">{result.bufferHours.toFixed(1)} hours</span>
+                                </div>
+                            </div>
+                        </Card>
+                    )}
+
+                    {/* Time Activity Projections */}
+                    {result && (
+                        <Card className="p-6 bg-purple-50 border-purple-300">
+                            <h3 className="text-lg font-bold mb-3 flex items-center gap-2 text-purple-800">
+                                <Timer className="h-5 w-5" />
+                                Time Activity
+                            </h3>
+                            <div className="space-y-4">
+                                {/* From Departure */}
+                                <div className="space-y-2">
+                                    <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">From Your Departure</p>
+                                    <div className="flex items-center justify-between py-2 border-b border-purple-200">
+                                        <div className="flex items-center gap-2">
+                                            <Coffee className="h-4 w-4 text-orange-500" />
+                                            <span className="text-sm text-gray-700">30-min Break Due</span>
+                                        </div>
+                                        <span className="font-semibold text-orange-600">
+                                            {formatDate(result.breakDue)} {formatTime(result.breakDue)}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between py-2 border-b border-purple-200">
+                                        <div className="flex items-center gap-2">
+                                            <Truck className="h-4 w-4 text-red-500" />
+                                            <span className="text-sm text-gray-700">11-Hour Drive Limit</span>
+                                        </div>
+                                        <span className="font-semibold text-red-600">
+                                            {formatDate(result.driveLimit)} {formatTime(result.driveLimit)}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Securement Checks */}
+                                {result.securementChecks.length > 0 && (
+                                    <div className="space-y-2">
+                                        <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">Securement Checks (50min, then 2h 50m)</p>
+                                        {result.securementChecks.map((checkTime, idx) => (
+                                            <div key={idx} className="flex items-center justify-between py-2 border-b border-purple-200 last:border-0">
+                                                <div className="flex items-center gap-2">
+                                                    <PackageCheck className="h-4 w-4 text-blue-500" />
+                                                    <span className="text-sm text-gray-700">Check #{idx + 1}</span>
+                                                </div>
+                                                <span className="font-semibold text-blue-600">
+                                                    {formatTime(checkTime)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* From Arrival */}
+                                <div className="space-y-2">
+                                    <p className="text-xs font-medium text-purple-600 uppercase tracking-wide">After Your Arrival</p>
+                                    <div className="flex items-center justify-between py-2">
+                                        <div className="flex items-center gap-2">
+                                            <BedDouble className="h-4 w-4 text-green-500" />
+                                            <span className="text-sm text-gray-700">Can Drive Again</span>
+                                        </div>
+                                        <span className="font-semibold text-green-600">
+                                            {formatDate(result.canDriveAgain, destTimezone)} {formatTime(result.canDriveAgain, destTimezone)}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </Card>
+                    )}
+
                     {/* Latest Departure */}
-                    {result.latestDeparture && (
+                    {result && result.latestDeparture && (
                         <Card className="p-6 border-gray-400 bg-blue-50">
                             <h3 className="text-lg font-bold mb-2 flex items-center gap-2">
                                 <MapPin className="h-5 w-5" />
@@ -486,7 +617,7 @@ export function TripPlanner() {
                                 To arrive by {deliveryClose}, you must leave no later than:
                             </p>
                             <p className="text-xl font-bold mt-1">
-                                {formatDate(result.latestDeparture, originTimezone)} at {formatTime(result.latestDeparture, originTimezone)}
+                                {formatDate(result.latestDeparture)} at {formatTime(result.latestDeparture)}
                             </p>
                         </Card>
                     )}
