@@ -69,168 +69,6 @@ export function TripPlanner() {
         return isNaN(parsed) ? 0 : parsed;
     };
 
-
-
-    const getTripCalculation = (): TripResult | null => {
-        const miles = safeParseFloat(distance);
-        const avgSpeed = 52.5; // mph
-        const totalDriveHoursRequired = miles / avgSpeed;
-
-        if (miles <= 0) return null;
-
-        // Parse Departure Time in Origin Timezone
-        let currentTime = DateTime.fromISO(`${departureDate}T${departureTime}`, { zone: originTimezone });
-        const initialDeparture = currentTime;
-
-        if (!currentTime.isValid) return null;
-
-        // Initialize Counters
-        let remainingDriveHours = totalDriveHoursRequired;
-        let totalDriveTimeAccumulated = 0;
-        let totalRestTimeAccumulated = 0;
-        let totalBreakTimeAccumulated = 0;
-        const breaks: { time: DateTime; type: string; duration: number }[] = [];
-
-        // DOT HOS Trackers
-        let driveTimeInShift = 0;
-        let onDutyTimeInShift = 0;
-        let driveTimeSinceBreak = 0;
-
-        // Multi-Day Schedule
-        const daySchedule: { day: number; driveStart: DateTime; driveEnd: DateTime; restEnd: DateTime; isArrivalDay: boolean }[] = [];
-        let dayNum = 1;
-        let shiftStart = currentTime;
-
-        // Simulation Loop
-        while (remainingDriveHours > 0) {
-            const distTo8 = 8 - driveTimeSinceBreak;
-            const distTo11 = 11 - driveTimeInShift;
-            const distTo14 = 14 - onDutyTimeInShift;
-
-            const maxDriveBlock = Math.max(0, Math.min(distTo8, distTo11, distTo14, remainingDriveHours));
-
-            if (maxDriveBlock > 0) {
-                currentTime = currentTime.plus({ hours: maxDriveBlock });
-                remainingDriveHours -= maxDriveBlock;
-                driveTimeInShift += maxDriveBlock;
-                onDutyTimeInShift += maxDriveBlock;
-                driveTimeSinceBreak += maxDriveBlock;
-                totalDriveTimeAccumulated += maxDriveBlock;
-            }
-
-            if (remainingDriveHours <= 0.01) break;
-
-            // 30-min Break Rule
-            if (Math.abs(driveTimeSinceBreak - 8) < 0.01) {
-                const needs10h = (Math.abs(driveTimeInShift - 11) < 0.01) || (Math.abs(onDutyTimeInShift - 14) < 0.01);
-                if (!needs10h) {
-                    currentTime = currentTime.plus({ minutes: 30 });
-                    breaks.push({ time: currentTime, type: "30-min Break", duration: 30 });
-                    totalBreakTimeAccumulated += 30;
-                    driveTimeSinceBreak = 0;
-                    onDutyTimeInShift += 0.5;
-                }
-            }
-
-            // 10-hour Rest Rule
-            if (Math.abs(driveTimeInShift - 11) < 0.01 || Math.abs(onDutyTimeInShift - 14) < 0.01) {
-                const shiftEnd = currentTime;
-
-                // Take 10h rest
-                currentTime = currentTime.plus({ hours: 10 });
-
-                // ---------------------------------------------------------
-                // DRIVER HABIT ENFORCEMENT: 5 AM Start
-                // ---------------------------------------------------------
-                if (currentTime.hour < 5) {
-                    currentTime = currentTime.set({ hour: 5, minute: 0, second: 0, millisecond: 0 });
-                    // Note: This adds implicit rest time, but primarily just aligns the schedule
-                }
-
-                daySchedule.push({
-                    day: dayNum,
-                    driveStart: shiftStart,
-                    driveEnd: shiftEnd,
-                    restEnd: currentTime,
-                    isArrivalDay: false
-                });
-
-                breaks.push({ time: currentTime, type: "10-hour Rest (EndOfShift)", duration: 600 });
-                totalRestTimeAccumulated += 10; // Simplified tracker
-
-                driveTimeInShift = 0;
-                onDutyTimeInShift = 0;
-                driveTimeSinceBreak = 0;
-                shiftStart = currentTime;
-                dayNum++;
-            }
-        }
-
-        // Final Leg
-        daySchedule.push({
-            day: dayNum,
-            driveStart: shiftStart,
-            driveEnd: currentTime,
-            restEnd: currentTime,
-            isArrivalDay: true
-        });
-
-        // Add Loading/Unloading
-        const loadHours = safeParseFloat(loadingTime);
-        const bufferHours = totalDriveHoursRequired * 0.1;
-
-        currentTime = currentTime.plus({ hours: loadHours + bufferHours });
-
-        // Delivery Logic
-        let arrivalInDest = currentTime.setZone(destTimezone);
-        if (arrivalInDest.weekday === 7) {
-            arrivalInDest = arrivalInDest.plus({ days: 1 });
-            const [openH, openM] = deliveryOpen.split(":").map(Number);
-            arrivalInDest = arrivalInDest.set({ hour: openH, minute: openM, second: 0, millisecond: 0 });
-        }
-
-        const [closeH, closeM] = deliveryClose.split(":").map(Number);
-        const deliveryCloseToday = arrivalInDest.set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 });
-
-        let isLate = false;
-        if (arrivalInDest > deliveryCloseToday) isLate = true;
-
-        const totalDurationHours = totalDriveTimeAccumulated + totalRestTimeAccumulated + (totalBreakTimeAccumulated / 60) + loadHours + bufferHours;
-        const latestDeparture = deliveryCloseToday.minus({ hours: totalDurationHours }).setZone(originTimezone);
-
-        const driveLimit = initialDeparture.plus({ hours: 11 });
-        const breakDue = initialDeparture.plus({ hours: 8 });
-        const canDriveAgain = driveLimit.plus({ hours: 10 });
-
-        const checkPoints: DateTime[] = [];
-        let checkTimer = initialDeparture.plus({ minutes: 50 });
-        if (checkTimer < driveLimit) checkPoints.push(checkTimer);
-        let safeLoopGuard = 0;
-        while (checkTimer < driveLimit && safeLoopGuard < 20) {
-            checkTimer = checkTimer.plus({ minutes: 170 });
-            if (checkTimer < driveLimit) checkPoints.push(checkTimer);
-            safeLoopGuard++;
-        }
-
-        return {
-            arrivalTime: arrivalInDest,
-            totalHours: totalDurationHours,
-            driveHours: totalDriveHoursRequired,
-            breakMinutes: totalBreakTimeAccumulated,
-            restHours: totalRestTimeAccumulated,
-            bufferHours: bufferHours + loadHours,
-            breaks,
-            isLate,
-            latestDeparture,
-            departureDateTime: initialDeparture,
-            driveLimit,
-            breakDue,
-            canDriveAgain,
-            securementChecks: checkPoints,
-            daySchedule
-        };
-    };
-
     const handleSmartSchedule = async () => {
         const missing = [];
         if (!distance) missing.push("Distance");
@@ -242,24 +80,14 @@ export function TripPlanner() {
             return;
         }
 
-        // 1. Run the Math First (Ground Truth)
-        const mathResult = getTripCalculation();
-        if (!mathResult) {
-            alert("Could not calculate trip details for AI.");
-            return;
-        }
-
         setIsLoadingAI(true);
         try {
-            // 2. Pass Math to AI
             const result = await generateTripSchedule({
                 distance: safeParseFloat(distance),
                 departureDate,
                 departureTime,
                 originTimezone,
                 destTimezone,
-                calculatedArrival: formatTime(mathResult.arrivalTime, destTimezone), // "Fri, Jan 3 at 9:00 AM PST"
-                totalDurationHours: mathResult.totalHours
             });
             setAiResult(result);
         } catch (error) {
@@ -281,10 +109,198 @@ export function TripPlanner() {
             return;
         }
 
-        const res = getTripCalculation();
-        if (res) {
-            setResult(res);
+        const miles = safeParseFloat(distance);
+        const avgSpeed = 50; // mph
+        const totalDriveHoursRequired = miles / avgSpeed;
+
+        // Parse Departure Time in Origin Timezone
+        // input format is YYYY-MM-DD and HH:MM
+        let currentTime = DateTime.fromISO(`${departureDate}T${departureTime}`, { zone: originTimezone });
+        const initialDeparture = currentTime;
+
+        // Verify valid date
+        if (!currentTime.isValid) {
+            alert("Invalid Date/Time entered.");
+            return;
         }
+
+        // Initialize Counters
+        let remainingDriveHours = totalDriveHoursRequired;
+        let totalDriveTimeAccumulated = 0;
+        let totalRestTimeAccumulated = 0; // hours
+        let totalBreakTimeAccumulated = 0; // minutes
+        const breaks: { time: DateTime; type: string; duration: number }[] = [];
+
+        // DOT HOS Trackers
+        let driveTimeInShift = 0;      // max 11
+        let onDutyTimeInShift = 0;     // max 14 (simplified: driving is on-duty)
+        let driveTimeSinceBreak = 0;   // max 8
+
+        // Multi-Day Schedule
+        const daySchedule: { day: number; driveStart: DateTime; driveEnd: DateTime; restEnd: DateTime; isArrivalDay: boolean }[] = [];
+        let dayNum = 1;
+        let shiftStart = currentTime;
+
+        // Simulation Loop (1-minute resolution for better accuracy, or chunked logic)
+        // Optimized chunk logic:
+        while (remainingDriveHours > 0) {
+            // Determine max drive we can do in this state
+            // Constraints:
+            // 1. 8-hour break limit: (8 - driveTimeSinceBreak)
+            // 2. 11-hour drive limit: (11 - driveTimeInShift)
+            // 3. 14-hour window: (14 - onDutyTimeInShift) -> simplified, assumes continuous driving
+            // 4. Remaining trip distance
+
+            const distTo8 = 8 - driveTimeSinceBreak;
+            const distTo11 = 11 - driveTimeInShift;
+            const distTo14 = 14 - onDutyTimeInShift; // simplified
+
+            // The constraint hitting 0 first determines the event
+            const maxDriveBlock = Math.max(0, Math.min(distTo8, distTo11, distTo14, remainingDriveHours));
+
+            // Advance time by this block
+            if (maxDriveBlock > 0) {
+                currentTime = currentTime.plus({ hours: maxDriveBlock });
+                remainingDriveHours -= maxDriveBlock;
+                driveTimeInShift += maxDriveBlock;
+                onDutyTimeInShift += maxDriveBlock;
+                driveTimeSinceBreak += maxDriveBlock;
+                totalDriveTimeAccumulated += maxDriveBlock;
+            }
+
+            // Check what triggered the stop
+            if (remainingDriveHours <= 0.01) {
+                // Trip Done!
+                break;
+            }
+
+            // DOT Rule Triggers
+            if (Math.abs(driveTimeSinceBreak - 8) < 0.01) {
+                // 30-min break required
+                // BUT: if we also hit 11/14, the 10h rest overrides the 30m break usually? 
+                // Actually 30m break counts against 14h window but extends 8h driving.
+                // If we need a 10h rest anyway, we just take the 10h rest.
+
+                const needs10h = (Math.abs(driveTimeInShift - 11) < 0.01) || (Math.abs(onDutyTimeInShift - 14) < 0.01);
+
+                if (!needs10h) {
+                    currentTime = currentTime.plus({ minutes: 30 });
+                    breaks.push({ time: currentTime, type: "30-min Break", duration: 30 });
+                    totalBreakTimeAccumulated += 30;
+                    driveTimeSinceBreak = 0; // Reset 8h clock
+                    onDutyTimeInShift += 0.5; // Break counts against 14h window? DOT: Off-duty break extends window? No, usually counts against 14h unless split sleeper. Simplified: counts.
+                }
+            }
+
+            if (Math.abs(driveTimeInShift - 11) < 0.01 || Math.abs(onDutyTimeInShift - 14) < 0.01) {
+                // 10-hour rest required (End of Shift)
+                const shiftEnd = currentTime;
+
+                // Record Day Schedule
+                daySchedule.push({
+                    day: dayNum,
+                    driveStart: shiftStart,
+                    driveEnd: shiftEnd,
+                    restEnd: shiftEnd.plus({ hours: 10 }),
+                    isArrivalDay: false
+                });
+
+                // Take 10h rest
+                currentTime = currentTime.plus({ hours: 10 });
+                breaks.push({ time: currentTime, type: "10-hour Rest (EndOfShift)", duration: 600 });
+                totalRestTimeAccumulated += 10;
+
+                // Reset Shift Clocks
+                driveTimeInShift = 0;
+                onDutyTimeInShift = 0;
+                driveTimeSinceBreak = 0;
+                shiftStart = currentTime;
+                dayNum++;
+            }
+        }
+
+        // Final Leg Schedule
+        daySchedule.push({
+            day: dayNum,
+            driveStart: shiftStart,
+            driveEnd: currentTime,
+            restEnd: currentTime, // No rest needed after arrival
+            isArrivalDay: true
+        });
+
+        // Add Loading/Unloading Time
+        const loadHours = safeParseFloat(loadingTime);
+        const bufferHours = totalDriveHoursRequired * 0.1; // 10% buffer
+
+        // Add Loading + Buffer to final time
+        currentTime = currentTime.plus({ hours: loadHours + bufferHours });
+
+        // Delivery Window Logic (Convert Arrival to Dest Timezone)
+        let arrivalInDest = currentTime.setZone(destTimezone);
+
+        // Check if arrival is on Sunday => Move to Monday delivery open
+        if (arrivalInDest.weekday === 7) { // Luxon: 1=Mon ... 7=Sun
+            // Move to next day (Monday)
+            arrivalInDest = arrivalInDest.plus({ days: 1 });
+            // Set to Open Time
+            const [openH, openM] = deliveryOpen.split(":").map(Number);
+            arrivalInDest = arrivalInDest.set({ hour: openH, minute: openM, second: 0, millisecond: 0 });
+        }
+
+        // Parse Delivery Window for the *Arrival Day*
+        const [closeH, closeM] = deliveryClose.split(":").map(Number);
+        const deliveryCloseToday = arrivalInDest.set({ hour: closeH, minute: closeM, second: 0, millisecond: 0 });
+
+        // Late Check
+        let isLate = false;
+        // If arrival is after close time?
+        if (arrivalInDest > deliveryCloseToday) {
+            isLate = true;
+            // Optionally, we could say "Available next morning" logic, but basic late check is fine.
+        }
+
+        // Latest Departure Calculation (Work Backwards)
+        // We take the delivery deadline and subtract total trip duration
+        const totalDurationHours = totalDriveTimeAccumulated + totalRestTimeAccumulated + (totalBreakTimeAccumulated / 60) + loadHours + bufferHours;
+        // This is a rough estimate; exact reverse HOS is hard. Simple subtraction is usually "good enough" for latest departure estimate.
+        // We target the *Delivery Close* time of the arrival day.
+        const idealArrival = deliveryCloseToday; // Target arriving exactly at close?
+        const latestDeparture = idealArrival.minus({ hours: totalDurationHours }).setZone(originTimezone);
+
+        // Projections
+        const driveLimit = initialDeparture.plus({ hours: 11 });
+        const breakDue = initialDeparture.plus({ hours: 8 });
+        const canDriveAgain = driveLimit.plus({ hours: 10 }); // simplified
+
+        // Securement Checks (50m, then 2h50m = 170m)
+        const checkPoints: DateTime[] = [];
+        let checkTimer = initialDeparture.plus({ minutes: 50 });
+        if (checkTimer < driveLimit) checkPoints.push(checkTimer);
+
+        let safeLoopGuard = 0;
+        while (checkTimer < driveLimit && safeLoopGuard < 20) {
+            checkTimer = checkTimer.plus({ minutes: 170 }); // 2h 50m
+            if (checkTimer < driveLimit) checkPoints.push(checkTimer);
+            safeLoopGuard++;
+        }
+
+        setResult({
+            arrivalTime: arrivalInDest,
+            totalHours: totalDurationHours,
+            driveHours: totalDriveHoursRequired,
+            breakMinutes: totalBreakTimeAccumulated,
+            restHours: totalRestTimeAccumulated,
+            bufferHours: bufferHours + loadHours,
+            breaks,
+            isLate,
+            latestDeparture: latestDeparture,
+            departureDateTime: initialDeparture,
+            driveLimit,
+            breakDue,
+            canDriveAgain,
+            securementChecks: checkPoints,
+            daySchedule
+        });
     };
 
     const formatTime = (dt: DateTime, tz?: string) => {
@@ -319,7 +335,7 @@ export function TripPlanner() {
                     </div>
 
                     {/* Origin & Destination Timezones */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Origin Timezone</label>
                             <select
@@ -351,7 +367,7 @@ export function TripPlanner() {
                     </div>
 
                     {/* Departure Date & Time */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Departure Date</label>
                             <Input
@@ -370,7 +386,7 @@ export function TripPlanner() {
                     </div>
 
                     {/* Delivery Window */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                         <div>
                             <TimePicker
                                 label="Delivery Opens"
@@ -399,14 +415,14 @@ export function TripPlanner() {
                         />
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-4">
-                        <Button onClick={calculateTrip} variant="outline" className="flex-1 w-full sm:w-auto">
+                    <div className="flex gap-4">
+                        <Button onClick={calculateTrip} variant="outline" className="flex-1">
                             Calculators Only
                         </Button>
                         <Button
                             onClick={handleSmartSchedule}
                             disabled={isLoadingAI}
-                            className="flex-1 w-full sm:w-auto bg-black hover:bg-gray-800 text-white flex items-center justify-center gap-2"
+                            className="flex-1 bg-black hover:bg-gray-800 text-white flex items-center justify-center gap-2"
                         >
                             {isLoadingAI ? (
                                 <span>Thinking...</span>
@@ -457,51 +473,20 @@ export function TripPlanner() {
                                 <p className="text-sm text-gray-600">Estimated Arrival: <strong>{aiResult.summary.estimatedArrival}</strong></p>
                             </div>
                             <div className="space-y-3">
-                                {Object.entries(
-                                    aiResult.schedule.reduce((acc, item) => {
-                                        // Group by Day number
-                                        const key = item.day;
-                                        if (!acc[key]) acc[key] = [];
-                                        acc[key].push(item);
-                                        return acc;
-                                    }, {} as Record<number, typeof aiResult.schedule>)
-                                ).map(([dayNum, events]) => (
-                                    <div key={dayNum} className="bg-white rounded-lg border border-indigo-100 shadow-sm overflow-hidden">
-                                        {/* Day Header */}
-                                        <div className="bg-indigo-50 px-4 py-2 border-b border-indigo-100 flex justify-between items-center">
-                                            <span className="font-bold text-indigo-900">
-                                                Day {dayNum} <span className="text-indigo-400 mx-1">|</span> {events[0].date}
-                                            </span>
-                                            <span className="text-xs text-indigo-600 font-medium">
-                                                {events.length} Events
-                                            </span>
+                                {aiResult.schedule.map((day, idx) => (
+                                    <div key={idx} className="p-3 bg-white rounded-lg border border-indigo-100 shadow-sm">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="font-bold text-indigo-900">Day {day.day} - {day.date}</span>
+                                            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">{day.activity}</span>
                                         </div>
-
-                                        {/* Events List */}
-                                        <div className="divide-y divide-gray-50">
-                                            {events.map((event, idx) => (
-                                                <div key={idx} className="p-3 hover:bg-gray-50 transition-colors">
-                                                    <div className="flex justify-between items-start mb-1">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${event.activity.toLowerCase().includes('drive') ? 'bg-blue-100 text-blue-700' :
-                                                                event.activity.toLowerCase().includes('rest') ? 'bg-purple-100 text-purple-700' :
-                                                                    'bg-gray-100 text-gray-700'
-                                                                }`}>
-                                                                {event.activity}
-                                                            </span>
-                                                        </div>
-                                                        <div className="text-sm font-medium text-gray-900">
-                                                            {event.start} <span className="text-gray-400 mx-1">→</span> {event.end}
-                                                        </div>
-                                                    </div>
-                                                    {event.notes && (
-                                                        <p className="text-xs text-gray-500 mt-1 pl-1 border-l-2 border-indigo-100">
-                                                            {event.notes}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            ))}
+                                        <div className="flex justify-between text-sm text-gray-700 mb-1">
+                                            <span>{day.start}</span>
+                                            <span>→</span>
+                                            <span>{day.end}</span>
                                         </div>
+                                        <p className="text-xs text-gray-500 italic border-t border-gray-100 pt-2 mt-2">
+                                            {day.notes}
+                                        </p>
                                     </div>
                                 ))}
                             </div>

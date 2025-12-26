@@ -69,11 +69,38 @@ export function TripPlanner() {
         return isNaN(parsed) ? 0 : parsed;
     };
 
+    const handleSmartSchedule = async () => {
+        const missing = [];
+        if (!distance) missing.push("Distance");
+        if (!departureDate) missing.push("Departure Date");
+        if (!departureTime) missing.push("Departure Time");
 
+        if (missing.length > 0) {
+            alert(`Please fill in: ${missing.join(", ")}`);
+            return;
+        }
+
+        setIsLoadingAI(true);
+        try {
+            const result = await generateTripSchedule({
+                distance: safeParseFloat(distance),
+                departureDate,
+                departureTime,
+                originTimezone,
+                destTimezone,
+            });
+            setAiResult(result);
+        } catch (error) {
+            alert("Failed to generate AI schedule. Check console.");
+            console.error(error);
+        } finally {
+            setIsLoadingAI(false);
+        }
+    };
 
     const getTripCalculation = (): TripResult | null => {
         const miles = safeParseFloat(distance);
-        const avgSpeed = 52.5; // mph
+        const avgSpeed = 50; // mph
         const totalDriveHoursRequired = miles / avgSpeed;
 
         if (miles <= 0) return null;
@@ -319,7 +346,7 @@ export function TripPlanner() {
                     </div>
 
                     {/* Origin & Destination Timezones */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Origin Timezone</label>
                             <select
@@ -351,7 +378,7 @@ export function TripPlanner() {
                     </div>
 
                     {/* Departure Date & Time */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Departure Date</label>
                             <Input
@@ -370,7 +397,7 @@ export function TripPlanner() {
                     </div>
 
                     {/* Delivery Window */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                         <div>
                             <TimePicker
                                 label="Delivery Opens"
@@ -399,14 +426,14 @@ export function TripPlanner() {
                         />
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-4">
-                        <Button onClick={calculateTrip} variant="outline" className="flex-1 w-full sm:w-auto">
+                    <div className="flex gap-4">
+                        <Button onClick={calculateTrip} variant="outline" className="flex-1">
                             Calculators Only
                         </Button>
                         <Button
                             onClick={handleSmartSchedule}
                             disabled={isLoadingAI}
-                            className="flex-1 w-full sm:w-auto bg-black hover:bg-gray-800 text-white flex items-center justify-center gap-2"
+                            className="flex-1 bg-black hover:bg-gray-800 text-white flex items-center justify-center gap-2"
                         >
                             {isLoadingAI ? (
                                 <span>Thinking...</span>
@@ -457,51 +484,20 @@ export function TripPlanner() {
                                 <p className="text-sm text-gray-600">Estimated Arrival: <strong>{aiResult.summary.estimatedArrival}</strong></p>
                             </div>
                             <div className="space-y-3">
-                                {Object.entries(
-                                    aiResult.schedule.reduce((acc, item) => {
-                                        // Group by Day number
-                                        const key = item.day;
-                                        if (!acc[key]) acc[key] = [];
-                                        acc[key].push(item);
-                                        return acc;
-                                    }, {} as Record<number, typeof aiResult.schedule>)
-                                ).map(([dayNum, events]) => (
-                                    <div key={dayNum} className="bg-white rounded-lg border border-indigo-100 shadow-sm overflow-hidden">
-                                        {/* Day Header */}
-                                        <div className="bg-indigo-50 px-4 py-2 border-b border-indigo-100 flex justify-between items-center">
-                                            <span className="font-bold text-indigo-900">
-                                                Day {dayNum} <span className="text-indigo-400 mx-1">|</span> {events[0].date}
-                                            </span>
-                                            <span className="text-xs text-indigo-600 font-medium">
-                                                {events.length} Events
-                                            </span>
+                                {aiResult.schedule.map((day, idx) => (
+                                    <div key={idx} className="p-3 bg-white rounded-lg border border-indigo-100 shadow-sm">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="font-bold text-indigo-900">Day {day.day} - {day.date}</span>
+                                            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">{day.activity}</span>
                                         </div>
-
-                                        {/* Events List */}
-                                        <div className="divide-y divide-gray-50">
-                                            {events.map((event, idx) => (
-                                                <div key={idx} className="p-3 hover:bg-gray-50 transition-colors">
-                                                    <div className="flex justify-between items-start mb-1">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${event.activity.toLowerCase().includes('drive') ? 'bg-blue-100 text-blue-700' :
-                                                                event.activity.toLowerCase().includes('rest') ? 'bg-purple-100 text-purple-700' :
-                                                                    'bg-gray-100 text-gray-700'
-                                                                }`}>
-                                                                {event.activity}
-                                                            </span>
-                                                        </div>
-                                                        <div className="text-sm font-medium text-gray-900">
-                                                            {event.start} <span className="text-gray-400 mx-1">→</span> {event.end}
-                                                        </div>
-                                                    </div>
-                                                    {event.notes && (
-                                                        <p className="text-xs text-gray-500 mt-1 pl-1 border-l-2 border-indigo-100">
-                                                            {event.notes}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            ))}
+                                        <div className="flex justify-between text-sm text-gray-700 mb-1">
+                                            <span>{day.start}</span>
+                                            <span>→</span>
+                                            <span>{day.end}</span>
                                         </div>
+                                        <p className="text-xs text-gray-500 italic border-t border-gray-100 pt-2 mt-2">
+                                            {day.notes}
+                                        </p>
                                     </div>
                                 ))}
                             </div>
