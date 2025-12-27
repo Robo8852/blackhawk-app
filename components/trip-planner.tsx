@@ -820,40 +820,9 @@ export function TripPlanner() {
                         </Card>
                     )}
 
-                    {/* Debug Logs (Hidden from UI, kept in logic) */}
                 </div>
             )}
 
-            {/* Debug Console */}
-            <Card className="p-6 border-gray-800 bg-gray-900 text-green-400 mt-8">
-                <div className="flex justify-between items-center mb-3">
-                    <h3 className="text-lg font-bold flex items-center gap-2">
-                        <span className="text-xl">👾</span>
-                        DEBUG CONSOLE
-                    </h3>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-green-400 hover:text-green-300 hover:bg-gray-800"
-                        onClick={() => {
-                            const data = JSON.stringify({ calculated: result, ai: aiResult }, null, 2);
-                            navigator.clipboard.writeText(data);
-                            alert("Copied to clipboard!");
-                        }}
-                    >
-                        <Copy className="h-4 w-4 mr-2" />
-                        Copy JSON
-                    </Button>
-                </div>
-                <div className="bg-black p-4 rounded-lg overflow-x-auto">
-                    <pre className="text-xs font-mono">
-                        {JSON.stringify({
-                            calculated: result,
-                            ai: aiResult
-                        }, null, 2)}
-                    </pre>
-                </div>
-            </Card>
         </div>
     );
 }
