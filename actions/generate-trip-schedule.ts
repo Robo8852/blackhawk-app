@@ -8,26 +8,54 @@ export async function generateTripSchedule(data: {
   destTimezone: string;
   calculatedArrival: string;
   totalDurationHours: number;
+  scheduleSkeleton: any[]; // New: Pass the calculated legs/events
 }) {
+  const {
+    distance, departureDate, departureTime, originTimezone, destTimezone,
+    calculatedArrival, totalDurationHours, scheduleSkeleton
+  } = data;
+
   const apiKey = process.env.OPENROUTER_API_KEY;
 
   if (!apiKey) {
     throw new Error("Missing OPENROUTER_API_KEY");
   }
 
+  // Helper to convert ISO string time part to 12h format
+  const to12h = (isoStr: string) => {
+    try {
+      if (!isoStr.includes('T')) return isoStr;
+      const timePart = isoStr.split('T')[1];
+      const [h, m] = timePart.split(':').map(Number);
+      const suffix = h >= 12 ? 'PM' : 'AM';
+      const hour12 = h % 12 || 12;
+      return `${hour12}:${m.toString().padStart(2, '0')} ${suffix}`;
+    } catch (e) {
+      return isoStr; // Fallback
+    }
+  };
+
+  const skeletonSummary = scheduleSkeleton.map(leg =>
+    `Day ${leg.day} (${leg.driveStart.split('T')[0]}): Drive ${to12h(leg.driveStart)} to ${to12h(leg.driveEnd)}. Then ${leg.restType || 'Rest'} until ${to12h(leg.restEnd)}`
+  ).join('\n');
+
   const prompt = `
-  You are an expert DOT Logistics Planner (AI Agent).
-  Calculated Ground Truths (PHYSICS):
-  - Total Distance: ${data.distance} miles
-  - Avg Speed: 52.5 mph
-  - Total Drive Time: ${data.totalDurationHours.toFixed(2)} hours
-  - Departure: ${data.departureDate} at ${data.departureTime}
-  - Target Arrival: ${data.calculatedArrival}
+  You are an expert DOT Logistics Planner by Blackhawk AI.
   
-  The user wants a realistic day-by-day trucking schedule that adheres to these physics.
+  CRITICAL: CALCULATED SKELETON (FOLLOW THIS EXACTLY - DATES AND TIMES ARE FINAL):
+  ${skeletonSummary}
+  
+  Calculated Ground Truths (PHYSICS):
+  - Total Distance: ${distance} miles
+  - Avg Speed: 52.5 mph
+  - Total Duration: ${totalDurationHours.toFixed(2)} hours
+  - Departure: ${departureDate} at ${departureTime}
+  - Target Arrival: ${calculatedArrival}
   
   STRICT RULES:
-  1. START the schedule EXACTLY at ${data.departureDate} ${data.departureTime}.
+  1. ADHERE TO THE SKELETON ABOVE. The calculator has already determined the legal breaks/resets.
+  2. If the skeleton says "34-hour Cycle Reset", YOU MUST SCHEDULE IT EXACTLY THERE.
+  3. START the schedule EXACTLY at ${departureDate} ${departureTime}.
   2. HOS: 11h MAX drive/shift. 30m break REQUIRED after 8h continuous driving.
   3. SPLIT long drives: Do not schedule 11h straight. (e.g., 8h Drive -> 30m Break -> 3h Drive).
   4. MATH MUST BE EXACT: Start Time + Duration = End Time.
@@ -36,9 +64,17 @@ export async function generateTripSchedule(data: {
   5. DRIVER WELLNESS: Only 3am-9am starts.
      - If a 10h rest ends at 2:30 AM, EXTEND the rest to 6:00 AM.
      - Drivers are humans, not robots. Avoid "flipped" sleep schedules.
-  6. Events must be SEQUENTIAL. Do not overlap start/end times.
-  7. The final arrival MUST match the Target Arrival. Adjust breaks/splits to align.
-  5. Return ONLY valid JSON. No markdown formatting. No conversational text.
+  6. 70-HOUR RULE: If total on-duty time exceeds 70 hours, take a 34-HOUR RESET.
+     - Label this distinct event: "Begin 34-hour Cycle Reset".
+     - Do not schedule more than 70 hours of work in 8 days without a restart.
+  7. FORMATTING: Use clean, distinct events.
+     - Use labels like "Leg 1", "Leg 2" in the notes if helpful.
+     - "Begin 34-hour Reset" should be its own item.
+     - "Resume Driving" should be its own item.
+  8. Events must be SEQUENTIAL. Do not overlap start/end times.
+
+  9. The final arrival MUST match the Target Arrival. Adjust breaks/splits to align.
+  10. Return ONLY valid JSON. No markdown formatting. No conversational text.
   
   JSON Structure:
   {
