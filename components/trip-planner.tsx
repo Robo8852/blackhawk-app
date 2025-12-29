@@ -651,6 +651,7 @@ export function TripPlanner() {
                                 AI Trip Schedule
                             </h3>
                             <div className="mb-4 p-3 bg-white rounded-lg border border-indigo-100">
+                                <p className="text-sm text-gray-600">Distance: <strong>{distance} miles</strong></p>
                                 <p className="text-sm text-gray-600">Total Duration: <strong>{aiResult.summary.totalDurationHours} hours</strong></p>
                                 <p className="text-sm text-gray-600">Estimated Arrival: <strong>{aiResult.summary.estimatedArrival}</strong></p>
                             </div>
