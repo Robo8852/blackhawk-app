@@ -438,6 +438,9 @@ export function TripPlanner() {
             return;
         }
 
+        // Also set the calculator result so we have daySchedule for miles display
+        setResult(mathResult);
+
         setIsLoadingAI(true);
         try {
             // 2. Pass Math to AI
@@ -497,6 +500,18 @@ export function TripPlanner() {
 
     const formatDate = (dt: DateTime, tz?: string) => {
         return dt.setZone(tz || dt.zoneName || undefined).toFormat("ccc, MMM d");
+    };
+
+    // Calculate miles driven for a specific day from the daySchedule
+    const getMilesForDay = (dayNum: number): number => {
+        if (!result?.daySchedule) return 0;
+        const dayLegs = result.daySchedule.filter(leg => leg.day === dayNum);
+        let totalHours = 0;
+        for (const leg of dayLegs) {
+            const hours = leg.driveEnd.diff(leg.driveStart, 'hours').hours;
+            if (hours > 0) totalHours += hours;
+        }
+        return Math.round(totalHours * 52.5);
     };
 
     return (
@@ -671,9 +686,16 @@ export function TripPlanner() {
                                             <span className="font-bold text-indigo-900">
                                                 Day {dayNum} <span className="text-indigo-400 mx-1">|</span> {events[0].date}
                                             </span>
-                                            <span className="text-xs text-indigo-600 font-medium">
-                                                {events.length} Events
-                                            </span>
+                                            <div className="flex items-center gap-3">
+                                                {getMilesForDay(Number(dayNum)) > 0 && (
+                                                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                                                        {getMilesForDay(Number(dayNum))} mi
+                                                    </span>
+                                                )}
+                                                <span className="text-xs text-indigo-600 font-medium">
+                                                    {events.length} Events
+                                                </span>
+                                            </div>
                                         </div>
 
                                         {/* Events List */}
