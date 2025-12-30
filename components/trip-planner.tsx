@@ -83,7 +83,7 @@ export function TripPlanner() {
 
     const getTripCalculation = (): TripResult | null => {
         const miles = safeParseFloat(distance);
-        const avgSpeed = 52.5; // mph (Updated to 52.5 for War Room "Physics")
+        const avgSpeed = 47; // mph (Updated to 47 for more conservative estimate)
         const totalDriveHoursRequired = miles / avgSpeed;
 
         if (miles <= 0) return null;
@@ -511,7 +511,7 @@ export function TripPlanner() {
             const hours = leg.driveEnd.diff(leg.driveStart, 'hours').hours;
             if (hours > 0) totalHours += hours;
         }
-        return Math.round(totalHours * 52.5);
+        return Math.round(totalHours * 47);
     };
 
     return (

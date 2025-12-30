@@ -47,7 +47,7 @@ export async function generateTripSchedule(data: {
   
   Calculated Ground Truths (PHYSICS):
   - Total Distance: ${distance} miles
-  - Avg Speed: 52.5 mph
+  - Avg Speed: 47 mph
   - Total Duration: ${totalDurationHours.toFixed(2)} hours
   - Departure: ${departureDate} at ${departureTime}
   - Target Arrival: ${calculatedArrival}
