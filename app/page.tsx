@@ -5,6 +5,7 @@ import { SearchAdd } from "@/components/search-add";
 import { TaskList } from "@/components/task-list";
 import { Routes } from "@/components/routes";
 import { TripPlanner } from "@/components/trip-planner";
+import { WeatherWizard } from "@/components/weather-wizard";
 import { BottomNav } from "@/components/bottom-nav";
 import { useState } from "react";
 
@@ -19,7 +20,7 @@ export default function Home() {
         {activeTab === "inspections" && <TaskList />}
         {activeTab === "delivery" && <Routes />}
         {activeTab === "calendar" && <TripPlanner />}
-        {activeTab === "settings" && <div className="px-6 py-4 text-center text-gray-500">Settings coming soon...</div>}
+        {activeTab === "settings" && <WeatherWizard />}
         <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
       </div>
     </main>

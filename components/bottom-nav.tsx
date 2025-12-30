@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardList, CheckSquare, Calendar, Settings } from "lucide-react";
+import { ClipboardList, CheckSquare, Calendar, Snowflake } from "lucide-react";
 
 type BottomNavProps = {
     activeTab: string;
@@ -46,9 +46,9 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
                     className="flex flex-col items-center gap-1"
                 >
                     <div className={`p-2 rounded-lg ${activeTab === "settings" ? "bg-black" : ""}`}>
-                        <Settings className={`h-6 w-6 ${activeTab === "settings" ? "text-white" : "text-gray-600"}`} />
+                        <Snowflake className={`h-6 w-6 ${activeTab === "settings" ? "text-white" : "text-gray-600"}`} />
                     </div>
-                    <span className={`text-xs font-medium ${activeTab === "settings" ? "" : "text-gray-600"}`}>Settings</span>
+                    <span className={`text-xs font-medium ${activeTab === "settings" ? "" : "text-gray-600"}`}>Weather Wizard</span>
                 </button>
             </div>
             {/* Home indicator bar simulation */}
