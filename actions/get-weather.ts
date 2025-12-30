@@ -9,6 +9,7 @@ export interface WeatherData {
   humidity: number;
   windSpeed: number;
   windSpeedMph: number;
+  windGustMph: number | null;
 }
 
 export async function getWeather(city: string): Promise<WeatherData | { error: string }> {
@@ -22,12 +23,33 @@ export async function getWeather(city: string): Promise<WeatherData | { error: s
     return { error: "Please enter a city name" };
   }
 
-  try {
-    const res = await fetch(
-      `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${apiKey}&units=metric`
-    );
+  // Clean up input
+  const input = city.trim();
 
+  // Detect if it's a US zip code (5 digits)
+  const isZipCode = /^\d{5}$/.test(input);
+
+  let url: string;
+  if (isZipCode) {
+    // Use zip code endpoint
+    url = `https://api.openweathermap.org/data/2.5/weather?zip=${input},US&appid=${apiKey}&units=metric`;
+  } else {
+    // City name - clean up and handle state abbreviations
+    let query = input.replace(/\s*,\s*/g, ","); // Remove spaces around commas
+    const parts = query.split(",");
+    if (parts.length === 2 && parts[1].length === 2) {
+      query = `${query},US`;
+    }
+    url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(query)}&appid=${apiKey}&units=metric`;
+  }
+
+  try {
+    console.log("Fetching weather from:", url.replace(apiKey!, "API_KEY"));
+
+    const res = await fetch(url);
     const data = await res.json();
+
+    console.log("API Response:", JSON.stringify(data).substring(0, 200));
 
     if (data.cod != 200) {
       return { error: data.message || "City not found" };
@@ -42,8 +64,9 @@ export async function getWeather(city: string): Promise<WeatherData | { error: s
       humidity: data.main.humidity,
       windSpeed: Math.round(data.wind.speed * 3.6), // m/s to km/h
       windSpeedMph: Math.round(data.wind.speed * 2.237), // m/s to mph
+      windGustMph: data.wind.gust ? Math.round(data.wind.gust * 2.237) : null, // m/s to mph
     };
-  } catch {
+  } catch (e) {
     return { error: "Failed to fetch weather data" };
   }
 }

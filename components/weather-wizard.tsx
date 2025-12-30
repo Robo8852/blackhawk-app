@@ -50,7 +50,7 @@ export function WeatherWizard() {
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                         <Input
-                            placeholder="Enter city name..."
+                            placeholder="City, State or Zip code..."
                             value={city}
                             onChange={(e) => setCity(e.target.value)}
                             onKeyPress={handleKeyPress}
@@ -94,7 +94,12 @@ export function WeatherWizard() {
                                 <Wind className="h-6 w-6 text-gray-500" />
                                 <div>
                                     <p className="text-xs text-gray-500">Wind Speed</p>
-                                    <p className="font-semibold">{weather.windSpeedMph} mph</p>
+                                    <p className="font-semibold">
+                                        {weather.windSpeedMph} mph
+                                        {weather.windGustMph && (
+                                            <span className="text-gray-500 font-normal"> (gusts {weather.windGustMph})</span>
+                                        )}
+                                    </p>
                                 </div>
                             </div>
                             <div className="bg-gray-50 rounded-lg p-4 flex items-center gap-3">
