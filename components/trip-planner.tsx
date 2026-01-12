@@ -83,7 +83,7 @@ export function TripPlanner() {
 
     const getTripCalculation = (): TripResult | null => {
         const miles = safeParseFloat(distance);
-        const avgSpeed = 47; // mph (Updated to 47 for more conservative estimate)
+        const avgSpeed = 50; // mph (Updated to 50 for more conservative estimate)
         const totalDriveHoursRequired = miles / avgSpeed;
 
         if (miles <= 0) return null;
