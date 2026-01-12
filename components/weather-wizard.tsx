@@ -4,8 +4,8 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Thermometer, Wind, Droplets, Snowflake } from "lucide-react";
-import { getWeather, WeatherData } from "@/actions/get-weather";
+import { Search, Thermometer, Wind, Droplets, Snowflake, Eye, AlertTriangle } from "lucide-react";
+import { getWeather, WeatherData, WeatherAlert } from "@/actions/get-weather";
 
 export function WeatherWizard() {
     const [city, setCity] = useState("");
@@ -74,6 +74,44 @@ export function WeatherWizard() {
 
                 {weather && (
                     <div className="space-y-4">
+                        {/* Weather Alerts - Only show when active */}
+                        {weather.alerts && weather.alerts.length > 0 && (
+                            <div className="space-y-2">
+                                {weather.alerts.map((alert, idx) => (
+                                    <div
+                                        key={idx}
+                                        className={`p-3 rounded-lg border-l-4 flex items-start gap-2 ${
+                                            alert.severity === 'Extreme' ? 'bg-red-50 border-red-500' :
+                                            alert.severity === 'Severe' ? 'bg-orange-50 border-orange-500' :
+                                            'bg-yellow-50 border-yellow-500'
+                                        }`}
+                                    >
+                                        <AlertTriangle className={`h-5 w-5 mt-0.5 flex-shrink-0 ${
+                                            alert.severity === 'Extreme' ? 'text-red-600' :
+                                            alert.severity === 'Severe' ? 'text-orange-600' :
+                                            'text-yellow-600'
+                                        }`} />
+                                        <div>
+                                            <p className={`text-sm font-bold ${
+                                                alert.severity === 'Extreme' ? 'text-red-800' :
+                                                alert.severity === 'Severe' ? 'text-orange-800' :
+                                                'text-yellow-800'
+                                            }`}>
+                                                {alert.event}
+                                            </p>
+                                            <p className={`text-xs ${
+                                                alert.severity === 'Extreme' ? 'text-red-700' :
+                                                alert.severity === 'Severe' ? 'text-orange-700' :
+                                                'text-yellow-700'
+                                            }`}>
+                                                {alert.headline}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
                         {/* Main weather display */}
                         <div className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl p-6 text-white">
                             <h3 className="text-2xl font-bold mb-1">{weather.city}</h3>
@@ -109,6 +147,15 @@ export function WeatherWizard() {
                                     <p className="font-semibold">{weather.humidity}%</p>
                                 </div>
                             </div>
+                            {weather.visibilityMiles !== null && (
+                                <div className="bg-gray-50 rounded-lg p-4 flex items-center gap-3">
+                                    <Eye className="h-6 w-6 text-gray-500" />
+                                    <div>
+                                        <p className="text-xs text-gray-500">Visibility</p>
+                                        <p className="font-semibold">{weather.visibilityMiles} miles</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Trucker tip */}
